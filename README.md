@@ -1,6 +1,5 @@
 Samba-Active-Directory Infrastructure
 =====================================
-=====================================
 
 This Repository along with the following document will lead you through installing a infastructure simular to a **Active-Directory** Structure on Microsofts Windows Server on a Ubunut Linux machine.
 
@@ -216,4 +215,150 @@ sudo samba-tool user list
 Finally you can display the FSMO Rules with the command:
 ```bash
 sudo samba-tool fsmo show
+```
+
+### Setup LDAP Account Manager (LAM)
+
+The LDAP Account Manager is a really ugly webinterface that basically provides a user-friendly interface to work with LDAP.
+
+To setup LAM first install the ldap tools with:
+```bash
+sudo apt install smbldap-tools && sudo apt install ldap-account-manager
+```
+I would also recommend ldap-utils for testing and debugging the ldap interface:
+```bash
+sudo apt install ldap-utils
+```
+
+As Samba as well as LAM is officially retarded they still think LDAP is secure... Thats why we need to adjust the configuration to use LDAPS instead (LDAP on top of TLS):
+
+#### Setup LDAPS on LAM
+
+To set LDAPS as default protocoll on LAM, go to the config */var/lib/ldap-account-manager/config/lam.conf*
+And set following as serverurl:
+```bash
+ServerURL: ldaps://localhost:636
+```
+If you dont find the **lam.conf** you can look up in the LAM conf: The location is specified in */etc/ldap-account-manager/config.cfg* as:
+```bash
+# default profile, without ".conf"
+default: lam
+```
+Or manually find it by using:
+```bash
+sudo find / -name "lam*.conf" 2>/dev/null
+```
+
+Then restart apache:
+```bash
+sudo systemctl restart apache2
+```
+
+#### Setup LDAPS on Samba Server
+
+To setup LDAPS on the Samba service we need to have a SSL certificate, this can be done in three ways, using a Self-Signed Certificate (comes with limitations), using a Lets-Encrypt certificate or if you're really whealty, you can also buy a official signed certificate.
+
+I will show you how to do it with Lets-Encrypt and with a Self-Signed certificate, if you use a officially signed certificate, you just need to add it to the *smb.conf*. 
+
+Keep in mind that you need to be the owner of the public domain if you use Lets-Encrypt, as I'm not the owner of *iet-gibb.ch*, I will use the way of the Self-Signed certificate in this tutorial, when using Lets-Encrypt it will be way easier and you can ommit some steps later on.
+
+##### Self Signed Certificate
+
+If you don't use a certifications server I would recommend to store the certificates in a location like this:
+
+```bash
+sudo mkdir -p /etc/ssl/samba/private
+sudo mkdir /etc/ssl/samba/certs
+```
+
+Now generate the private & public key
+
+```bash
+# Generate Private key
+sudo openssl genpkey -algorithm RSA -out /etc/ssl/samba/private/ldap.pem
+# Generate Public certificate, make sure that the Common Name matches the Domain-FQDN (sam159.iet-gibb.ch)
+sudo openssl req -new -x509 -key /etc/ssl/samba/private/ldap.pem -out /etc/ssl/samba/certs/ldap.cert
+```
+
+Finally make sure that you set permissions to protect the generated keys (especially the keyfile)
+
+```bash
+# You only need to do this if the owner is not already set to the executor of the samba-ad-dc
+sudo chown root -R /etc/ssl/samba/private
+sudo chown root -R /etc/ssl/samba/certs
+
+# Read/Write only for owner
+sudo chmod 600 -R /etc/ssl/samba/private
+# Read/Write for Owner and Read for other users
+sudo chmod 755 -R /etc/ssl/samba/certs
+```
+
+If you've done this, now you can add following lines to the */etc/samba/smb.conf* configuration (in the [global] section):
+
+```bash
+[global]
+    tls enabled  = yes
+    tls keyfile  = /etc/ssl/samba/private/ldap.pem
+    tls certfile = /etc/ssl/samba/certs/ldap.cert
+    tls cafile   = /etc/ssl/samba/certs/ldap.cert
+```
+If you use an external ca-server, you will need to set the location of the certificate-authority file in the *cafile* option.
+
+Now restart the active-directory and verify the state:
+
+```bash
+sudo systemctl restart samba-ad-dc && sudo systemctl status samba-ad-dc
+```
+
+If you previously installed the *ldap-utils* you can now check the connections with:
+
+```bash
+# As we have no globally signed ca certificate, we need to specify it manually here
+export LDAPTLS_CACERT=/etc/ssl/samba/certs/ldap.cert
+ldapsearch -H ldaps://sam159.iet-gibb.ch -x -b "dc=sam159,dc=iet-gibb,dc=ch"
+```
+Remember, if you use a self signed certificate authority (ca certificate) you will always need to pass this certificate authority to the LDAP-Client (or disable the check of the ca what is not recommended). If you actually plan to do this, I would recommend to create a certificate-server where clients can read the ca certificate from a NFS/SFTP Share.
+
+##### Lets-Encrypt Certificate
+
+First we need to install certbot to generate the certificates:
+
+```bash
+sudo apt install certbot
+```
+
+Now you can obtain a certificate from the certbot-server and verify it with a DNS-Challange (the command may vary from DNS-Provider to DNS-Provider, the example here uses Cloudflare):
+
+```bash
+sudo certbot certonly --manual --preferred-challenges=dns -d sam159.iet-gibb.ch
+```
+
+Certbot will give you specific instructions on what DNS record to create.
+
+The certbot should now have created following directory: */etc/letsencrypt/live/sam159.iet-gibb.ch/* containing the privatekey and the certificate. You can now update the Samba config */etc/samba/smb.conf* like this:
+
+```bash
+[global]
+    tls enabled  = yes
+    tls keyfile  = /etc/letsencrypt/live/sam159.iet-gibb.ch/privkey.pem
+    tls certfile = /etc/letsencrypt/live/sam159.iet-gibb.ch/fullchain.pem
+```
+As this is a globally trusted certificate authority you don't need to specify a cafile.
+
+The certificate is valid for 90 days, you can renew it by using following command:
+
+```bash
+sudo certbot renew --quiet
+```
+
+Now restart the active-directory and verify the state:
+
+```bash
+sudo systemctl restart samba-ad-dc && sudo systemctl status samba-ad-dc
+```
+
+If you previously installed the *ldap-utils* you can now check the connections with:
+
+```bash
+ldapsearch -H ldaps://sam159.iet-gibb.ch -x -b "dc=sam159,dc=iet-gibb,dc=ch"
 ```
