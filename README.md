@@ -230,94 +230,18 @@ I would also recommend ldap-utils for testing and debugging the ldap interface:
 sudo apt install ldap-utils
 ```
 
-As Samba as well as LAM is officially retarded they still think LDAP is secure... Thats why we need to adjust the configuration to use LDAPS instead (LDAP on top of TLS):
+As Samba as well as LAM is officially retarded they still think unencrypted LDAP by default is a good idea... Thats why we need to adjust the configuration to use LDAP+SSL (StartTLS) instead (LDAP on top of TLS).
 
-#### Setup LDAPS on LAM
+**INFORMATION**: StartTLS is a technique that connects the client over the unencrypted LDAP (389) and then upgrades the connection to run on top of TLS. This is really flexible as it allows you to run the connection over the LDAP Port (389) while not blocking the unencrypted LDAP portbinding.
 
-To set LDAPS as default protocoll on LAM, go to the config */var/lib/ldap-account-manager/config/lam.conf*
-And set following as serverurl:
-```bash
-ServerURL: ldaps://localhost:636
-```
-If you dont find the **lam.conf** you can look up in the LAM conf: The location is specified in */etc/ldap-account-manager/config.cfg* as:
-```bash
-# default profile, without ".conf"
-default: lam
-```
-Or manually find it by using:
-```bash
-sudo find / -name "lam*.conf" 2>/dev/null
-```
 
-Then restart apache:
-```bash
-sudo systemctl restart apache2
-```
+#### Setup LDAP+SSL on Samba Server
 
-#### Setup LDAPS on Samba Server
-
-To setup LDAPS on the Samba service we need to have a SSL certificate, this can be done in three ways, using a Self-Signed Certificate (comes with limitations), using a Lets-Encrypt certificate or if you're really whealty, you can also buy a official signed certificate.
+To setup LDAP with StartTLS on the Samba service we need to have a SSL certificate, this can be done in three ways, using a Self-Signed Certificate (comes with limitations), using a Lets-Encrypt certificate or if you're really whealty, you can also buy a official signed certificate.
 
 I will show you how to do it with Lets-Encrypt and with a Self-Signed certificate, if you use a officially signed certificate, you just need to add it to the *smb.conf*. 
 
 Keep in mind that you need to be the owner of the public domain if you use Lets-Encrypt, as I'm not the owner of *iet-gibb.ch*, I will use the way of the Self-Signed certificate in this tutorial, when using Lets-Encrypt it will be way easier and you can ommit some steps later on.
-
-##### Self Signed Certificate
-
-If you don't use a certifications server I would recommend to store the certificates in a location like this:
-
-```bash
-sudo mkdir -p /etc/ssl/samba/private
-sudo mkdir /etc/ssl/samba/certs
-```
-
-Now generate the private & public key
-
-```bash
-# Generate Private key
-sudo openssl genpkey -algorithm RSA -out /etc/ssl/samba/private/ldap.pem
-# Generate Public certificate, make sure that the Common Name matches the Domain-FQDN (sam159.iet-gibb.ch)
-sudo openssl req -new -x509 -key /etc/ssl/samba/private/ldap.pem -out /etc/ssl/samba/certs/ldap.cert
-```
-
-Finally make sure that you set permissions to protect the generated keys (especially the keyfile)
-
-```bash
-# You only need to do this if the owner is not already set to the executor of the samba-ad-dc
-sudo chown root -R /etc/ssl/samba/private
-sudo chown root -R /etc/ssl/samba/certs
-
-# Read/Write only for owner
-sudo chmod 600 -R /etc/ssl/samba/private
-# Read/Write for Owner and Read for other users
-sudo chmod 755 -R /etc/ssl/samba/certs
-```
-
-If you've done this, now you can add following lines to the */etc/samba/smb.conf* configuration (in the [global] section):
-
-```bash
-[global]
-    tls enabled  = yes
-    tls keyfile  = /etc/ssl/samba/private/ldap.pem
-    tls certfile = /etc/ssl/samba/certs/ldap.cert
-    tls cafile   = /etc/ssl/samba/certs/ldap.cert
-```
-If you use an external ca-server, you will need to set the location of the certificate-authority file in the *cafile* option.
-
-Now restart the active-directory and verify the state:
-
-```bash
-sudo systemctl restart samba-ad-dc && sudo systemctl status samba-ad-dc
-```
-
-If you previously installed the *ldap-utils* you can now check the connections with:
-
-```bash
-# As we have no globally signed ca certificate, we need to specify it manually here
-export LDAPTLS_CACERT=/etc/ssl/samba/certs/ldap.cert
-ldapsearch -H ldaps://sam159.iet-gibb.ch -x -b "dc=sam159,dc=iet-gibb,dc=ch"
-```
-Remember, if you use a self signed certificate authority (ca certificate) you will always need to pass this certificate authority to the LDAP-Client (or disable the check of the ca what is not recommended). If you actually plan to do this, I would recommend to create a certificate-server where clients can read the ca certificate from a NFS/SFTP Share.
 
 ##### Lets-Encrypt Certificate
 
@@ -330,7 +254,7 @@ sudo apt install certbot
 Now you can obtain a certificate from the certbot-server and verify it with a DNS-Challange (the command may vary from DNS-Provider to DNS-Provider, the example here uses Cloudflare):
 
 ```bash
-sudo certbot certonly --manual --preferred-challenges=dns -d sam159.iet-gibb.ch
+sudo certbot certonly --manual --preferred-challenges=dns -d srvdc01.sam159.iet-gibb.ch
 ```
 
 Certbot will give you specific instructions on what DNS record to create.
@@ -339,7 +263,7 @@ The certbot should now have created following directory: */etc/letsencrypt/live/
 
 ```bash
 [global]
-    tls enabled  = yes
+    ldap ssl = start tls
     tls keyfile  = /etc/letsencrypt/live/sam159.iet-gibb.ch/privkey.pem
     tls certfile = /etc/letsencrypt/live/sam159.iet-gibb.ch/fullchain.pem
 ```
@@ -360,5 +284,137 @@ sudo systemctl restart samba-ad-dc && sudo systemctl status samba-ad-dc
 If you previously installed the *ldap-utils* you can now check the connections with:
 
 ```bash
-ldapsearch -H ldaps://sam159.iet-gibb.ch -x -b "dc=sam159,dc=iet-gibb,dc=ch"
+# The ZZ Flag tells the ldap client to use StartTLS
+ldapsearch -H ldap://srvdc01.sam159.iet-gibb.ch -x -ZZ
 ```
+
+##### Self Signed Certificate
+
+If you don't use a certifications server I would recommend to store the certificates in a location like this:
+
+```bash
+sudo mkdir -p /etc/ssl/samba/private
+sudo mkdir /etc/ssl/samba/certs
+```
+
+Now generate the private & public key
+
+```bash
+# Generate Private key
+sudo openssl genpkey -algorithm RSA -out /etc/ssl/samba/private/ldap.pem
+# Generate Public certificate, make sure that the Common Name matches the Domain-FQDN (srvdc01.sam159.iet-gibb.ch)
+sudo openssl req -new -x509 -key /etc/ssl/samba/private/ldap.pem -out /etc/ssl/samba/certs/ldap.cert
+```
+
+Finally make sure that you set permissions to protect the generated keys (especially the keyfile)
+
+```bash
+# You only need to do this if the owner is not already set to the executor of the samba-ad-dc
+sudo chown root -R /etc/ssl/samba/private
+sudo chown root -R /etc/ssl/samba/certs
+
+# Read/Write only for owner
+sudo chmod 600 -R /etc/ssl/samba/private
+# Read/Write for Owner and Read for other users
+sudo chmod 755 -R /etc/ssl/samba/certs
+```
+
+If you've done this, now you can add following lines to the */etc/samba/smb.conf* configuration (in the [global] section):
+
+```bash
+[global]
+    ldap ssl = start tls
+    tls keyfile  = /etc/ssl/samba/private/ldap.pem
+    tls certfile = /etc/ssl/samba/certs/ldap.cert
+    tls cafile   = /etc/ssl/samba/certs/ldap.cert
+```
+If you use an external ca-server, you will need to set the location of the certificate-authority file in the *cafile* option.
+
+Now restart the active-directory and verify the state:
+
+```bash
+sudo systemctl restart samba-ad-dc && sudo systemctl status samba-ad-dc
+```
+
+If you previously installed the *ldap-utils* you can now check the connections with:
+
+```bash
+# As we have no globally signed ca certificate, we need to specify it manually here
+export LDAPTLS_CACERT=/etc/ssl/samba/certs/ldap.cert
+# The ZZ Flag tells the ldap client to use StartTLS
+ldapsearch -H ldap://srvdc01.sam159.iet-gibb.ch -x -ZZ
+```
+Remember, if you use a self signed certificate authority (ca certificate) you will always need to pass this certificate authority to the LDAP-Client (or disable the check of the ca what is not recommended). If you actually plan to do this, I would recommend to create a certificate-server where clients can read the ca certificate from a NFS/SFTP Share.
+
+
+
+#### Setup LDAP+SSL on LAM
+
+Now lets configure the LAM service to use the LDAP via StartTLS.
+
+For this you can go to the **LAM configuration** on the LAM Webinterface (*192.168.110.10/lam*). In the **LAM configuration** you can go to **Edit server profiles** and log in with the default password **lam**.
+Then change the **Server settings** to something like this:
+
+![LAM Configuration](/assets/lamconf01.png)
+
+Enable **Activate TLS** and set the **Server address** to the ldap path of the server.
+
+
+If you don't have a globally trusted certificate, we need to specify the location of the certification authority on the server.
+
+For this do following steps:
+
+```bash
+# LAM will look into the ldap.conf file for the location of the CACERT
+sudo tee /etc/ldap.conf <<EOF
+TLS_CACERT /etc/ssl/samba/certs/ldap.cert
+EOF
+
+# On the LAM website it's recommended to also link the file like that:
+sudo ln -f /etc/ldap.conf /etc/ldap/ldap.conf
+# As some LAM versions also look for the config inside the /etc/ldap directory
+
+# Now set Read+Execute rights for the LDAP conf as apache2 doesn't run with root privileges.
+sudo chmod 755 ldap.conf
+sudo chmod 755 -R ldap
+
+sudo systemctl restart apache2
+```
+
+
+#### Setup LAM Profile
+
+On the LDAP-Account-Manager you can now setup a LAM-Profile for a domain (in our case *sam159.iet-gibb.ch*).
+
+A **Server Profile** can be created by navigating to **LAM configuration**->**Edit server profiles**->**Manage server profiles** and adding a profile.
+
+I don't document the management of these LAM-Profiles here, as the GUI of LAM is really self-describing and the layout could potentially change in the future.
+
+Following options need to be configured as shown below:
+- **Profile management** -> **Template**          = **windows_samba4**
+- **General settings**   -> **Server address**    = **ldap://srvdc01.sam159.iet-gibb.ch**
+- **General settings**   -> **Activate TLS**      = **yes**
+- **General settings**   -> **Tree suffix**       = **dc=sam159,dc=iet-gibb,dc=ch**
+- **General settings**   -> **List of valid user**= **cn=Administrator,cn=users,dc=sam159dc=iet-gibb,dc=ch**
+- **General settings**   -> **List of valid user**= **administrator@sam159.iet-gibb.ch**
+- **Account types**      -> **LDAP suffix (Users)**       = **dc=sam159,dc=iet-gibb,dc=ch**
+- **Account types**      -> **LDAP suffix (Groups)**       = **dc=sam159,dc=iet-gibb,dc=ch**
+- **Account types**      -> **LDAP suffix (Hosts)**       = **CN=Computers,dc=sam159,dc=iet-gibb,dc=ch**
+- **Module settings**    -> **Domains**           = **sam159.iet-gibb.ch**
+
+
+After creating the LAM-Profile, you can select it on the Log-In page under **Server profile** and log in with the Domain-Administrator.
+
+If your Domain-Administrator login doesn't work, it's likely that the password of the Domain-Administrator is to weak.
+
+You can change it on the server with this command:
+```bash
+sudo samba-tool user password -Uadministrator
+```
+Or alternative (not recommended) you can also set following option in the [global] section of the */etc/samba/smb.conf*:
+
+```bash
+ldap server require strong auth = no
+```
+
+Another issue that I've experienced is that the format: **cn=Administrator,cn=users,dc=sam159dc=iet-gibb,dc=ch** in the **List of valid user** is not working on some LAM versions, to solve it just use the user in this format: **Administrator@sam159.iet-gibb.ch**.
