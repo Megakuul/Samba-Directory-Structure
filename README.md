@@ -18,6 +18,12 @@ All of the Servers need to be able to communicate to each other via IPv4.
 
 As this is done for a school project the realm is called "sam159.iet-gibb.ch", but feel free to take whatever name you want to use.
 
+
+
+
+
+
+
 ### Configure DNS Server and Hostname (SRVDC01)
 
 On the SRVDC01 do this in the */etc/hosts* file:
@@ -32,6 +38,11 @@ srvdc01.sam159.iet-gibb.ch
 ```
 
 On every other Server set the **IP** of the SRVDC01 as DNS Server and **sam159.iet-gibb.ch** as search-domain (or distribute it via dhcp service)
+
+
+
+
+
 
 ### Samba installation (SRVDC01)
 
@@ -91,17 +102,17 @@ If the */etc/resolv.conf* file still has a softlink on it, remove it and create 
 Check if all settings were configured correctly in the */etc/samba/smb.conf*, it should now look simular to this:
 ```bash
 [global]
-dns forwarder = 1.1.1.1
-netbios name = SRVDC01
-realm = SAM159.IET-GIBB.CH
-server role = active directory domain controller
-workgroup = SAM159
+    dns forwarder = 1.1.1.1
+    netbios name = SRVDC01
+    realm = SAM159.IET-GIBB.CH
+    server role = active directory domain controller
+    workgroup = SAM159
 [netlogon]
-path = /var/lib/samba/sysvol/sam159.iet-gibb.ch/scripts
-read only = No
+    path = /var/lib/samba/sysvol/sam159.iet-gibb.ch/scripts
+    read only = No
 [sysvol]
-path = /var/lib/samba/sysvol
-read only = No
+    path = /var/lib/samba/sysvol
+    read only = No
 ```
 
 
@@ -133,6 +144,10 @@ Now restart the server:
 ```bash
 sudo reboot
 ```
+
+
+
+
 #### Test Services
 
 You can test if the setup works by checking if the samba (bzw. smbd) service is listening to following ports:
@@ -165,6 +180,11 @@ host -t A srvdc01.sam159.iet-gibb.ch
 ```
 
 But as we all know, real men test in production.
+
+
+
+
+
 
 #### Set up DNS Records
 
@@ -217,6 +237,11 @@ Finally you can display the FSMO Rules with the command:
 sudo samba-tool fsmo show
 ```
 
+
+
+
+
+
 ### Setup LDAP Account Manager (LAM)
 
 The LDAP Account Manager is a really ugly webinterface that basically provides a user-friendly interface to work with LDAP.
@@ -235,6 +260,11 @@ As Samba as well as LAM is officially retarded they still think unencrypted LDAP
 **INFORMATION**: StartTLS is a technique that connects the client over the unencrypted LDAP (389) and then upgrades the connection to run on top of TLS. This is really flexible as it allows you to run the connection over the LDAP Port (389) while not blocking the unencrypted LDAP portbinding.
 
 
+
+
+
+
+
 #### Setup LDAP+SSL on Samba Server
 
 To setup LDAP with StartTLS on the Samba service we need to have a SSL certificate, this can be done in three ways, using a Self-Signed Certificate (comes with limitations), using a Lets-Encrypt certificate or if you're really whealty, you can also buy a official signed certificate.
@@ -242,6 +272,11 @@ To setup LDAP with StartTLS on the Samba service we need to have a SSL certifica
 I will show you how to do it with Lets-Encrypt and with a Self-Signed certificate, if you use a officially signed certificate, you just need to add it to the *smb.conf*. 
 
 Keep in mind that you need to be the owner of the public domain if you use Lets-Encrypt, as I'm not the owner of *iet-gibb.ch*, I will use the way of the Self-Signed certificate in this tutorial, when using Lets-Encrypt it will be way easier and you can ommit some steps later on.
+
+
+
+
+
 
 ##### Lets-Encrypt Certificate
 
@@ -287,6 +322,8 @@ If you previously installed the *ldap-utils* you can now check the connections w
 # The ZZ Flag tells the ldap client to use StartTLS
 ldapsearch -H ldap://srvdc01.sam159.iet-gibb.ch -x -ZZ
 ```
+
+
 
 ##### Self Signed Certificate
 
@@ -348,6 +385,11 @@ Remember, if you use a self signed certificate authority (ca certificate) you wi
 
 
 
+
+
+
+
+
 #### Setup LDAP+SSL on LAM
 
 Now lets configure the LAM service to use the LDAP via StartTLS.
@@ -375,11 +417,15 @@ sudo ln -f /etc/ldap.conf /etc/ldap/ldap.conf
 # As some LAM versions also look for the config inside the /etc/ldap directory
 
 # Now set Read+Execute rights for the LDAP conf as apache2 doesn't run with root privileges.
-sudo chmod 755 ldap.conf
-sudo chmod 755 -R ldap
+sudo chmod 755 /etc/ldap.conf
+sudo chmod 755 -R /etc/ldap
 
 sudo systemctl restart apache2
 ```
+
+
+
+
 
 
 #### Setup LAM Profile
@@ -418,3 +464,206 @@ ldap server require strong auth = no
 ```
 
 Another issue that I've experienced is that the format: **cn=Administrator,cn=users,dc=sam159dc=iet-gibb,dc=ch** in the **List of valid user** is not working on some LAM versions, to solve it just use the user in this format: **Administrator@sam159.iet-gibb.ch**.
+
+
+After logging into the LAM interface, you can test the system by creating a user and then fetching a tgt on the server.
+
+For this, first create a user in the LDAP Account Manager.
+
+![LAM User Configuration](/assets/lamconf02.png)
+Remember to set the password for the user!
+
+To get the tgt on the server (you can also do it from a client):
+```bash
+kinit -r SAM159.IET-GIBB.CH -p felix.blume && klist
+```
+
+**INFORMATION**: The DN attribute in the LDAP Account Manager is the DistinguishedName and refers to full LDAP "path" of the user.
+Example: The user "*felix.blume*" in the OU "*users*" in the domain "*sam159.iet-gibb.ch*" has following DN: 
+"*cn=felix blume,cn=users,dc=sam159,dc=iet-gibb,dc=ch*"
+You can get the DistinguishedName,SID and other user related information like this:
+```bash
+samba-tool user show felix.blume
+```
+
+
+
+
+
+
+### Set up fileservice (SRVFS01)
+
+
+We now want to set up SRVFS01. To do this, you will need an Ubuntu server configured to use the search domain and DNS server that we set up earlier.
+
+In the commands/examples I will use following configuration:
+- Server-IP: 192.168.110.20
+- DNS: 192.168.110.10
+- Search-Domain: sam159.iet-gibb.ch
+
+
+First you need to install the samba tools aswell as the kerberos heimdal client:
+
+```bash
+# As realm you need to set sam159.iet-gibb.ch
+sudo apt install samba samba-common-bin smbclient heimdal-clients libpam-heimdal
+```
+
+**INFORMATION**: Because Linux ext4 filesystem uses UID (User IDs) and GID (Group IDs) while NTFS has a format called SID (Security IDs), Samba needs a tool like *winbind* that translates various things like the mentioned SID to UID/GID or the NTFS permissions into ext4 acl-controls vice-versa.
+
+Then we also need the winbind-tools to be installed:
+
+```bash
+sudo apt install libnss-winbind libpam-winbind
+```
+
+To make samba use the winbind translator, you need to adjust the */etc/samba/smb.conf* with following attributes under the [global] section:
+
+```bash
+[global]
+  workgroup = sam159
+  realm = SAM159.IET-GIBB.CH
+  security = ADS
+  winbind use default domain = yes
+  winbind refresh tickets = yes
+  template shell = /bin/bash
+  idmap config * : range = 10000 - 19999
+  idmap config SAM159 : backend = rid
+  idmap config SAM159 : range = 1000000 - 1999999
+  inherit acls = yes
+  store dos attributes = yes
+  client ipc signing = auto
+  vfs objects = acl_xattr
+```
+
+Check the configuration with:
+
+```bash
+testparm
+```
+
+**INFORMATION**: The parameters have following functions
+- *workgroup*: NetBIOS name
+- *realm*: fqdn realm name
+- *security*: specifys whether the server serves as domain-component
+- *winbind use default domain*: Sets the default domain, with this users can log in without explicit specify the domain.
+- *winbind refresh tickets*: Makes winbind automatically refresh kerberos tickets if they are about to expire
+- *template shell*: Sets the default shell for domain-users (with this you can e.g. log into a machine with ssh)
+- *idmap config* *: These options specify the mapping between SIDs and UIDs/GIDs
+- *inherit acls*: Defines whether permission inheritance is enabled
+- *store dos attributes*: Enables the usage of DOS attributes like read-only, hidden, etc.
+- *client ipc signing*: Defines if IPC messages are signed with a cryptographic signature every time.
+- *vfs objects*: Sets the VFS module to use for using ACLs, in our case the *acl_xattr* allows Samba to store NTFS-style ACLs in extended attributes.
+
+If the settings are set, you need to join the SRVFS01 to the domain, for this make sure that the */etc/krb5.conf* file is setup the same as it is on the domain-controller.
+
+```bash
+sudo net ads join -Uadministrator
+# There will may be a error that the dns update failed, this is because we already set the dns-record for this server
+```
+
+**INFORMATION**: Linux has a NSS (Name Service Switch) service. If a programm like samba wants to aquire an information like a users password, a group or a hostname, it asks the NSS where to look this up, the NSS then determines the order in which databases are queried.
+For example if a network-name needs to be resolved, NSS determines whether the dns or the hosts file is first queried.
+
+In the NSS configuration (*/etc/nsswitch.conf*) you need to say that as third fallback it will go to winbind:
+
+```bash
+passwd: compat systemd winbind
+group: compat systemd winbind
+shadow: compat winbind
+```
+
+Afterwards restart the related services:
+
+```bash
+sudo systemctl restart smbd nmbd winbind
+```
+
+Now you should be able to switch the user on the SRVFS01 like this:
+
+```bash
+su - administrator@M159.IET-GIBB.CH
+# We can even ommit the Domain as we set the smb.conf to use a default domain
+su - administrator
+# Because we set the default shell to bash it will now open a bash shell session
+```
+
+With the *id* command you can see the translated UID of the user, you should then see that the UID is inside the previously defined range: idmap config SAM159 : range = 1000000 - 1999999
+
+As you can see the SID of the Users created with LAM or the RSAT Tools are in this format like this: *S-1-5-21-1234567890-1234567890-1234567890-1001*
+Winbind then looks at the RID:
+*1001*
+And translates this to the range defined:
+*1000001*
+We defined this range, because just using the RID would not work as these numbers are already in use by the users on the UNIX system like the user you are currently working with.
+
+
+
+
+#### Transfer Samba configuration to Registry
+
+This step is optional, I highly recommend doing it, especially if the samba-config is changed often.
+
+There are various reasons why a file server should always be managed via the registry and not via smb.conf: 
+
+- Clients initiate their own smbd processes, reading the entire smb.conf on connection. Modifying smb.conf makes every client reload the entire file, causing increased network traffic, especially with many clients or large configurations.
+- Using the registry only transfers the changes, reducing data overhead. 
+- Unlike smb.conf, an ASCII file editable by one admin at a time, the registry is a concurrent-accessible database. 
+- Instead of SSH-ing to the server to edit smb.conf, the registry allows remote configuration through Windows' Regedit, even facilitating new share creation.
+
+
+For the Samba-Configuration we will only need the *HKLM* hive, you can enumerate a element like this:
+
+```bash
+sudo net registry enumerate HKLM\\software
+```
+
+You can also access the registry over remote procedure calls:
+
+```bash
+# The k flag is used to authenticate with kerberos
+sudo net rpc registry enumerate HKLM\\software -k -S srvfs01.sam159.iet-gibb.ch
+```
+
+**INFORMATION**: The registry in the samba environment is stored in */var/lib/samba/registry.tdb* and only accessible by *root*.
+
+
+Now you can now import the local */etc/samba/smb.conf* configuration into the Registry like this:
+
+```bash
+sudo net conf import /etc/samba/smb.conf && sudo net conf list
+```
+
+After the config is imported, you can replace all options from the */etc/samba/smb.conf* that are contained in the [global] section with this:
+
+```bash
+[global]
+    config backend = registry
+```
+
+Now all samba services will load the config from the registry. You can check this by executing *testparm*. The *testparm* command should, among other things, output something like this
+*lp_load_ex: Switch to backend registration configuration*
+
+
+
+
+
+#### Setup Samba Shares
+
+
+
+### Setup Windows client for endusers
+
+### Setup Linux client for endusers
+
+### Control Active-Directory with RSAT-Tools from Windows
+
+If you 
+
+
+
+
+
+
+
+
