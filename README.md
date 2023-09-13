@@ -639,13 +639,150 @@ Now we finally want to create a datashare on our fileserver, for this you can cr
 ```bash
 mkdir -p /data/registry-share
 
-sudo net conf addshare registry
+sudo net conf addshare registry-share /data/registry-share writeable=y guest_ok=n "Share configured via Registry"
+```
+
+Display the samba conf like this:
+
+```bash
+# Display full samba conf
+sudo net registry export hklm\\software\\samba /dev/stdout
+# Display only this share
+sudo net registry enumerate hklm\\software\\samba\\smbconf\\reg-share -k -S SRVFS01.sam159.iet-gibb.ch
+```
+
+Now you should be able to access the share via *smbclient*:
+
+```bash
+# SMB client uses kerberos authentification by default, thats why you first need to populate the credential cache with a authorized user
+kinit administrator
+
+smbclient -L SRVFS01.sam159.iet-gibb.ch
+```
+
+#### Setup Home-Directories
+
+We now want to create a "Home-Directory" on the fileserver, samba 4 uses the directory */home/SAM159/<username>* by default. To create the directory we need to follow these steps:
+
+```bash
+# Create dir
+sudo mkdir /home/SAM159
+
+# Change permission to read for non-owners
+sudo chmod 755 /home/SAM159
+
+# Change the Ownership to the Domain-Administrator Group / Domainadministrator
+sudo chgrp "SAM159\Domain Admins" /home/SAM159/
+sudo chown "SAM159\administrator" /home/SAM159/
+
+# Create the Samba-Share
+sudo net conf addshare users /home/SAM159 writeable=y guest_ok=n "Home-Directories"
+
+# Disable read/list access for other users
+sudo net conf setparm users "browsable" "no"
+
+# Set read/write/exec rights only for the owner (enduser)
+sudo net conf setparm users "create mask" "700"
+sudo net conf setparm users "directory mask" "700"
+```
+
+Now you can use the active-directory to create these directories automatically.
+
+##### With RSAT-Tools you can do it like this:
+
+- Open the *Active Directory User and Computer* Snap-In on the MMC.
+- Navigate to the user and select *properties*
+- In the *Profile* tab, enter the path like shown on the image:
+
+![Homedirectory creation with RSAT](/assets/Homedir_RSAT.png)
+
+The path must be in UNC format and look something like this:
+```bash
+\\srvfs01.sam159.iet-gibb.ch\users\felix.blume
+```
+
+##### With LAM you can do it like this:
+
+- Open the LAM console as privileged user
+- Navigate to *Users->felix.blume->Edit*.
+- In the users configuration you can change it really simular like you would on Windows with RSAT:
+
+![Homedirectory creation with LAM](/assets/Homedir_LAM.png)
+
+The path must be in UNC format and look something like this:
+```bash
+\\srvfs01.sam159.iet-gibb.ch\users\felix.blume
 ```
 
 
-### Setup Windows client for endusers
+As we set the owner-group for the share to the "Domain Admins", the Domaincontroller should now be able to create the users directory.
 
-### Setup Linux client for endusers
+
+The active-directory will now automatically set the owner for the share to the user (in our case "felix.blume").
+
+
+#### Setup Administrative Share
+
+To most simple way to administrate multiple shares without getting in touch with complicated Linux-ACL lists, is to use a Administrative-Share on top of which you can then build multiple Shares with the relativ simple NTFS permissions.
+
+
+To set this up, you need to do this on the fileserver:
+
+First you need pass the privileg to setup shares to a group (in our case thats simply the "Domain Admins" group)
+
+```bash
+# Set diskoperatorprivilege (allows users to perform disk-related operations)
+sudo net rpc rights grant "SAM159\Domain Admins" SeDiskOperatorPrivilege -Uadministrator -S srvfs01
+# Review privileges
+sudo net rpc rights list "SAM159\Domain Admins" -Uadministrator -S srvfs01
+```
+
+Now create a share:
+
+```bash
+# Create dir
+sudo mkdir /data/shares
+
+sudo chmod 755 /data/shares
+
+# Change the Ownership to the Domain-Administrator Group / Domainadministrator (or the group you defined to manage the share)
+sudo chgrp "SAM159\Domain Admins" /data/shares
+sudo chown "SAM159\administrator" /data/shares
+
+# Create the Samba-Share
+sudo net conf addshare shares /data/shares writeable=y guest_ok=n "Administrative Root Share"
+```
+
+If you finished these operations successfully, you can now access (with the privileged users) the admin "root" share.
+
+
+To create an enduser share, you can now just create a folder inside the admin root share.
+From the Windows interface you can now also build your access-structure on top of the NTFS file-permissions.
+
+**INFORMATION**: For building the NTFS access-permission I would highly recommend using the the *Principle of least privilege*. And building a access-structure based on the [IGDLA]("https://medium.com/tech-jobs-academy/igdla-and-you-a-fledgling-s-guide-to-nesting-e09b748e3a60").
+
+
+Now we also want to share the created folder, so that the enduser can access it like a regular share (*\\srvfs01\myshare*).
+
+For this open the Registry (from SRVFS01) under the path *HKLM\\SOFTWARE\Samba\smbconf* and add a key with the name of your share (e.g. sh-public).
+
+
+Then you need to add REG-SZ keys containing the configuration of your share.
+
+![Registry Create Share](/assets/registry_create_share.png)
+(Vmls2=srvfs01 and /admin-share/PUBLIC=/data/shares/myshare)
+
+
+I recommend setting following parameters:
+
+- *path:      /data/shares/myshare*
+- *guest_ok:  no*
+- *writeable: yes*
+- *read only: no*
+- *browsable: yes*
+
+If you use a top-level share containing multiple folders I would also recommend setting *hide unreadable = yes*.
+
 
 ### Control Active-Directory with RSAT-Tools from Windows
 
@@ -654,6 +791,13 @@ This chapter will show you how you can manage the samba environment from a Windo
 
 For this you will need a Windows Server >2019 (or Windows 11 Pro with RSAT tools installed) that has been joined to the created domain.
 
+
+#### Using RSAT Tools
+
+If your device has been joined to the domain, you will be able to use the RSAT Tools from Microsoft on the Domain in the same way you would use it on a Microsoft AD.
+
+
+You can even access the Samba-Directory with the Active-Directory Powershell Module.
 
 #### Manage Sambaconf from Registry
 
