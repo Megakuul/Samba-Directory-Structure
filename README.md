@@ -157,7 +157,7 @@ You can test if the setup works by checking if the samba (bzw. smbd) service is 
 - :636
 - :445
 
-Listening ports can be displayed with **netstart -tlpn**.
+Listening ports can be displayed with **netstat -tlpn**.
 
 Next check with **samba_dnsupdate --verbose** for failures or errors on the DNS service.
 
