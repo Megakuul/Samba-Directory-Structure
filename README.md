@@ -179,7 +179,7 @@ But as we all know, real men test in production.
 
 Some domain services need to reverse lookup records, for this we need to create a Reverse lookup zone:
 ```bash
-sudo samba-tools dns zonecreate 192.168.110.10 110.168.192.in-addr.arpa -Uadministrator
+sudo samba-tool dns zonecreate 192.168.110.10 110.168.192.in-addr.arpa -Uadministrator
 ```
 
 **INFORMATION**: The samba dns tool is used like this:
