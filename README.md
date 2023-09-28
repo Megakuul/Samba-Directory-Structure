@@ -797,7 +797,7 @@ For this you will need a Windows Server >2019 (or Windows 11 Pro with RSAT tools
 If your device has been joined to the domain, you will be able to use the RSAT Tools from Microsoft on the Domain in the same way you would use it on a Microsoft AD.
 
 
-You can even access the Samba-Directory with the Active-Directory Powershell Module.
+Note that currently you can't use the Active-Directory Powershell Module on the Samba-Directory, this is because Samba currently does not implement the ActiveDirectory Webservices that are required as Powershell API.
 
 #### Manage Sambaconf from Registry
 
