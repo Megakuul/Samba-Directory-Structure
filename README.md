@@ -20,7 +20,6 @@ All of the Servers need to be able to communicate to each other via IPv4.
 
 As this is done for a school project the realm is called "sam159.iet-gibb.ch", but feel free to take whatever name you want to use.
 \
-\
 ### Configure DNS Server and Hostname (SRVDC01)
 
 On the SRVDC01 do this in the */etc/hosts* file:
@@ -35,7 +34,6 @@ srvdc01.sam159.iet-gibb.ch
 ```
 
 On every other Server set the **IP** of the SRVDC01 as DNS Server and **sam159.iet-gibb.ch** as search-domain (or distribute it via dhcp service)
-\
 \
 ### Samba installation (SRVDC01)
 
@@ -138,7 +136,6 @@ Now restart the server:
 sudo reboot
 ```
 \
-\
 #### Test Services
 
 You can test if the setup works by checking if the samba (bzw. smbd) service is listening to following ports:
@@ -171,7 +168,6 @@ host -t A srvdc01.sam159.iet-gibb.ch
 ```
 
 But as we all know, real men test in production.
-\
 \
 #### Set up DNS Records
 
@@ -224,7 +220,6 @@ Finally you can display the FSMO Rules with the command:
 sudo samba-tool fsmo show
 ```
 \
-\
 ### Setup LDAP Account Manager (LAM)
 
 The LDAP Account Manager is a really ugly webinterface that basically provides a user-friendly interface to work with LDAP.
@@ -242,7 +237,6 @@ As Samba as well as LAM is officially retarded they still think unencrypted LDAP
 
 **INFORMATION**: StartTLS is a technique that connects the client over the unencrypted LDAP (389) and then upgrades the connection to run on top of TLS. This is really flexible as it allows you to run the connection over the LDAP Port (389) while not blocking the unencrypted LDAP portbinding.
 \
-\
 #### Setup LDAP+SSL on Samba Server
 
 To setup LDAP with StartTLS on the Samba service we need to have a SSL certificate, this can be done in three ways, using a Self-Signed Certificate (comes with limitations), using a Lets-Encrypt certificate or if you're really whealty, you can also buy a official signed certificate.
@@ -250,7 +244,6 @@ To setup LDAP with StartTLS on the Samba service we need to have a SSL certifica
 I will show you how to do it with Lets-Encrypt and with a Self-Signed certificate, if you use a officially signed certificate, you just need to add it to the *smb.conf*. 
 
 Keep in mind that you need to be the owner of the public domain if you use Lets-Encrypt, as I'm not the owner of *iet-gibb.ch*, I will use the way of the Self-Signed certificate in this tutorial, when using Lets-Encrypt it will be way easier and you can ommit some steps later on.
-\
 \
 ##### Lets-Encrypt Certificate
 
@@ -296,7 +289,6 @@ If you previously installed the *ldap-utils* you can now check the connections w
 # The ZZ Flag tells the ldap client to use StartTLS
 ldapsearch -H ldap://srvdc01.sam159.iet-gibb.ch -x -ZZ
 ```
-\
 \
 ##### Self Signed Certificate
 
@@ -356,7 +348,6 @@ ldapsearch -H ldap://srvdc01.sam159.iet-gibb.ch -x -ZZ
 ```
 Remember, if you use a self signed certificate authority (ca certificate) you will always need to pass this certificate authority to the LDAP-Client (or disable the check of the ca what is not recommended). If you actually plan to do this, I would recommend to create a certificate-server where clients can read the ca certificate from a NFS/SFTP Share.
 \
-\
 #### Setup LDAP+SSL on LAM
 
 Now lets configure the LAM service to use the LDAP via StartTLS.
@@ -389,7 +380,6 @@ sudo chmod 755 -R /etc/ldap
 
 sudo systemctl restart apache2
 ```
-\
 \
 #### Setup LAM Profile
 
@@ -448,7 +438,6 @@ You can get the DistinguishedName,SID and other user related information like th
 ```bash
 samba-tool user show felix.blume
 ```
-\
 \
 ### Set up fileservice (SRVFS01)
 
@@ -587,7 +576,6 @@ And translates this to the range defined:
 \
 We defined this range, because just using the RID would not work as these numbers are already in use by the users on the UNIX system like the user you are currently working with.
 \
-\
 #### Transfer Samba configuration to Registry
 
 This step is optional, I highly recommend doing it, especially if the samba-config is changed often.
@@ -630,7 +618,6 @@ After the config is imported, you can replace all options from the */etc/samba/s
 
 Now all samba services will load the config from the registry. You can check this by executing *testparm*. The *testparm* command should, among other things, output something like this \
 *lp_load_ex: Switch to backend registration configuration*
-\
 \
 #### Setup Samba Shares
 
@@ -813,4 +800,7 @@ After mounting, it should look like this:
 
 
 Now you can work with the samba-conf like it is a native Windows Registry.
+\
+### Usage in production
 
+I created this document as part of a school project. Here, I want to mention that setting up Samba is a good practice to understand how the Active Directory structure is built. For smaller companies that don't expect significant growth, this can be a suitable solution. However, in enterprise environments or in scenarios where the company must scale, I would highly recommend not using Samba. Samba's Active Directory lacks many features; you can compare it to Windows Server 2008. While impressive for an emulated product, it cannot compete with the original Microsoft product.
